@@ -14,7 +14,7 @@ interface ManageFocusDialogProps {
   pendingDeactivateAt: number | null;
   onRequestDeactivateNormal: () => void;
   onCancelPendingDeactivation: () => void;
-  onSwitchToStrictWithPin: (pin: string) => void;
+  onSwitchToProtectedMode: (mode: 'strict' | 'no_scroll', pin: string) => void;
   onStrictVerifyAndApply: (action: 'to_normal' | 'deactivate') => void;
   onClose: () => void;
 }
@@ -27,14 +27,14 @@ export function ManageFocusDialog({
   pendingDeactivateAt,
   onRequestDeactivateNormal,
   onCancelPendingDeactivation,
-  onSwitchToStrictWithPin,
+  onSwitchToProtectedMode,
   onStrictVerifyAndApply,
   onClose,
 }: ManageFocusDialogProps) {
   const [strictStep, setStrictStep] = useState<
     'menu' | 'pin_to_normal' | 'pin_deactivate'
   >('menu');
-  const [normalStep, setNormalStep] = useState<'menu' | 'setup_strict_pin'>(
+  const [normalStep, setNormalStep] = useState<'menu' | 'strict' | 'no_scroll'>(
     'menu'
   );
   const [pinInput, setPinInput] = useState('');
@@ -56,6 +56,8 @@ export function ManageFocusDialog({
   if (!open) return null;
 
   const t = TRANSLATIONS[language].manageDialog;
+  const noScroll = language === 'es' ? 'Sin scroll' : 'No scroll';
+  const usesWait = mode === 'normal' || mode === 'no_scroll_normal';
   const actT = TRANSLATIONS[language].activateDialog;
 
   const handleConfirmStrictPin = () => {
@@ -68,7 +70,7 @@ export function ManageFocusDialog({
     );
   };
 
-  const handleConfirmUpgradeToStrict = () => {
+  const handleConfirmProtectedMode = () => {
     const p1 = newPin.trim();
     const p2 = confirmNewPin.trim();
     if (p1.length < 4) {
@@ -79,7 +81,7 @@ export function ManageFocusDialog({
       setErrorMsg(actT.pinMismatch);
       return;
     }
-    onSwitchToStrictWithPin(p1);
+    if (normalStep !== 'menu') onSwitchToProtectedMode(normalStep, p1);
   };
 
   return (
@@ -106,7 +108,7 @@ export function ManageFocusDialog({
                 {t.title}
               </h2>
               <p className="text-xs text-black/55 dark:text-white/55">
-                {mode === 'normal' ? t.currentNormal : t.currentStrict}
+                {mode === 'normal' ? t.currentNormal : (mode === 'no_scroll' || mode === 'no_scroll_normal') ? noScroll : t.currentStrict}
               </p>
             </div>
             <button
@@ -120,7 +122,7 @@ export function ManageFocusDialog({
           </div>
 
           {/* NORMAL MODE */}
-          {mode === 'normal' && pendingDeactivateAt !== null && (
+          {usesWait && pendingDeactivateAt !== null && (
             <div className="border border-black/15 dark:border-white/15 bg-white dark:bg-[#101010] p-4 space-y-4">
               <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-black dark:text-white">
                 <span>{t.pendingBeforeTime}</span>
@@ -141,7 +143,7 @@ export function ManageFocusDialog({
             </div>
           )}
 
-          {mode === 'normal' &&
+          {usesWait &&
             pendingDeactivateAt === null &&
             normalStep === 'menu' && (
               <div className="space-y-2.5">
@@ -158,10 +160,11 @@ export function ManageFocusDialog({
                   </p>
                 </button>
 
+                {mode === 'normal' && <>
                 <button
                   type="button"
                   onClick={() => {
-                    setNormalStep('setup_strict_pin');
+                    setNormalStep('strict');
                     setErrorMsg(null);
                   }}
                   className="w-full text-left border border-black/12 dark:border-white/12 bg-white dark:bg-[#101010] p-4 hover:border-black/30 dark:hover:border-white/30 transition-colors"
@@ -173,12 +176,27 @@ export function ManageFocusDialog({
                     {t.switchToStrictDesc}
                   </p>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNormalStep('no_scroll');
+                    setErrorMsg(null);
+                  }}
+                  className="w-full text-left border border-black/12 dark:border-white/12 bg-white dark:bg-[#101010] p-4 hover:border-black/30 dark:hover:border-white/30 transition-colors"
+                >
+                  <div className="text-sm font-semibold">{noScroll}</div>
+                  <p className="mt-1 text-xs text-black/60 dark:text-white/60 leading-relaxed">
+                    {language === 'es' ? 'Bloquea los feeds compatibles hasta que cambies de modo con tu PIN.'
+                      : 'Blocks supported feeds until you change modes with your PIN.'}
+                  </p>
+                </button>
+                </>}
               </div>
             )}
 
           {mode === 'normal' &&
             pendingDeactivateAt === null &&
-            normalStep === 'setup_strict_pin' && (
+            normalStep !== 'menu' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block space-y-1.5">
@@ -235,7 +253,7 @@ export function ManageFocusDialog({
                   </button>
                   <button
                     type="button"
-                    onClick={handleConfirmUpgradeToStrict}
+                    onClick={handleConfirmProtectedMode}
                     className="flex-1 min-h-[46px] bg-black text-white dark:bg-white dark:text-black text-xs font-semibold"
                   >
                     {t.confirmPinAction}
@@ -245,7 +263,7 @@ export function ManageFocusDialog({
             )}
 
           {/* STRICT MODE (PIN PROTECTED) */}
-          {mode === 'strict' && strictStep === 'menu' && (
+          {!usesWait && strictStep === 'menu' && (
             <div className="space-y-2.5">
               <button
                 type="button"
@@ -283,7 +301,7 @@ export function ManageFocusDialog({
             </div>
           )}
 
-          {mode === 'strict' && strictStep !== 'menu' && (
+          {!usesWait && strictStep !== 'menu' && (
             <div className="space-y-4">
               <label className="block space-y-1.5">
                 <span className="block text-xs font-medium text-black/65 dark:text-white/65">

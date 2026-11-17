@@ -36,10 +36,11 @@ export function TodayView({
 }: TodayViewProps) {
   const t = TRANSLATIONS[language].today;
 
+  const isNoScroll = config.mode === 'no_scroll' || config.mode === 'no_scroll_normal';
   const isInactive = config.status === 'inactive';
   const isNormalPending =
     config.status === 'active' &&
-    config.mode === 'normal' &&
+    (config.mode === 'normal' || config.mode === 'no_scroll_normal') &&
     config.pendingDeactivateAt !== null;
 
   const isExhausted = dailyState.usedSecondsToday >= DAILY_MAX_SCROLL_SECONDS;
@@ -94,10 +95,10 @@ export function TodayView({
                 ? t.inactiveTitle
                 : config.mode === 'normal'
                 ? t.activeNormal
-                : t.activeStrict}
+                : isNoScroll ? (language === 'es' ? 'Focus activo · Sin scroll' : 'Focus active · No scroll') : t.activeStrict}
             </span>
 
-            {config.status === 'active' && (
+            {config.status === 'active' && !isNoScroll && (
               <span className="inline-flex items-center text-black/55 dark:text-white/55">
                 <DigitalClock
                   value={`${String(usedMinutesToday).padStart(2, '0')}/30`}
@@ -134,7 +135,12 @@ export function TodayView({
             </div>
           ) : (
             <div className="space-y-6">
-              {!isInPause && !isExhausted && (
+              {isNoScroll && (
+                <h1 className="text-xl font-semibold">
+                  {language === 'es' ? 'Feeds bloqueados' : 'Feeds blocked'}
+                </h1>
+              )}
+              {!isNoScroll && !isInPause && !isExhausted && (
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-lg sm:text-xl font-medium tracking-tight text-black dark:text-white">
                     <span className="inline-flex items-center gap-2 whitespace-nowrap">
@@ -170,7 +176,7 @@ export function TodayView({
                 </div>
               )}
 
-              {isInPause && dailyState.pauseEndsAt !== null && (
+              {!isNoScroll && isInPause && dailyState.pauseEndsAt !== null && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg sm:text-xl font-medium tracking-tight text-black dark:text-white">
                     <span>{t.pauseLead}</span>
@@ -186,7 +192,7 @@ export function TodayView({
                 </div>
               )}
 
-              {isExhausted && (
+              {!isNoScroll && isExhausted && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg sm:text-xl font-medium tracking-tight text-black dark:text-white">
                     <DigitalClock value="30" size="sm" showGhost={false} />
@@ -200,7 +206,7 @@ export function TodayView({
 
               <div className="space-y-1 text-xs text-black/55 dark:text-white/55 leading-relaxed">
                 <p>{t.exemptSummary}</p>
-                {config.mode === 'strict' && <p>{t.strictPinActiveHint}</p>}
+                {(config.mode === 'strict' || config.mode === 'no_scroll') && <p>{t.strictPinActiveHint}</p>}
               </div>
 
               {isNormalPending && config.pendingDeactivateAt !== null ? (

@@ -166,7 +166,7 @@ export const TRANSLATIONS: Record<
       rulesSummary:
         '15 min iniciales de scroll · Pausa automática de 2 h · Máximo 30 min diarios',
       exemptSummary:
-        'Mensajes y búsqueda siguen disponibles. YouTube y Spotify quedan libres del límite de scroll.',
+        'Focus limita los feeds compatibles de Instagram, TikTok y YouTube. Mensajes y búsqueda siguen disponibles.',
       usedTodayWord: 'min usados hoy',
       availableWord: 'min disponibles',
       pauseLead: 'Vuelves a tener 15 min a las',
@@ -271,7 +271,7 @@ export const TRANSLATIONS: Record<
       emptyWeekly: 'Aún no hay datos de scroll esta semana.',
       exemptTitle: 'Siempre disponibles',
       exemptBody:
-        'Mensajes, búsqueda, YouTube y Spotify no consumen saldo de scroll.',
+        'Mensajes y búsqueda no consumen saldo de scroll.',
       minUnit: 'min',
     },
     settings: {
@@ -334,7 +334,7 @@ export const TRANSLATIONS: Record<
       rulesSummary:
         '15 min initial scroll · Automatic 2 h pause · 30 min daily maximum',
       exemptSummary:
-        'Messages and search stay available. YouTube and Spotify remain free from the scroll limit.',
+        'Focus limits supported feeds in Instagram, TikTok and YouTube. Messages and search stay available.',
       usedTodayWord: 'min used today',
       availableWord: 'min available',
       pauseLead: '15 min available again at',
@@ -438,7 +438,7 @@ export const TRANSLATIONS: Record<
       emptyWeekly: 'No scroll data recorded this week yet.',
       exemptTitle: 'Always available',
       exemptBody:
-        'Messages, search, YouTube, and Spotify do not consume scroll balance.',
+        'Messages and search do not consume scroll balance.',
       minUnit: 'min',
     },
     settings: {

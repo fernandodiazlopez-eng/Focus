@@ -1,0 +1,10 @@
+<resources>
+    <string name="accessibility_disclosure_title">Cómo usa Focus la Accesibilidad</string>
+    <string name="accessibility_disclosure_message">Focus usa la Accesibilidad de Android para identificar qué app tienes abierta y consultar los controles en pantalla de Instagram, TikTok y YouTube. Así detecta los feeds, mide el tiempo de uso y te saca de un feed o una app cuando lo bloquea una regla que has activado. Focus guarda en este móvil el tiempo de feed por app. No guarda ni envía el contenido de las pantallas ni tus mensajes. Puedes desactivar el servicio en los ajustes de Accesibilidad de Android.</string>
+    <string name="accessibility_not_now">Ahora no</string>
+    <string name="accessibility_accept">Aceptar y abrir ajustes</string>
+    <string name="service_description">Focus identifica la app en primer plano y las pantallas compatibles para aplicar tus límites. No guarda ni envía el contenido de tus mensajes.</string>
+    <string name="app_blocked">App bloqueada por Focus</string>
+    <string name="feed_blocked">Scroll en pausa en Focus</string>
+    <string name="explore_search_only">Usa la barra de búsqueda de arriba</string>
+</resources>

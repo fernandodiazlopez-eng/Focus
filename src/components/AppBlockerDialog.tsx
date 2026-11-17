@@ -46,7 +46,9 @@ export function AppBlockerDialog({
   const [scheduleDays, setScheduleDays] = useState<string[]>(appBlock.scheduleDays);
   const [scheduleStart, setScheduleStart] = useState<string>(appBlock.scheduleStart);
   const [scheduleEnd, setScheduleEnd] = useState<string>(appBlock.scheduleEnd);
-  const [password, setPassword] = useState<string>(appBlock.password);
+  const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [scheduleAllowOnly, setScheduleAllowOnly] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -57,7 +59,9 @@ export function AppBlockerDialog({
       setScheduleDays(appBlock.scheduleDays);
       setScheduleStart(appBlock.scheduleStart);
       setScheduleEnd(appBlock.scheduleEnd);
-      setPassword(appBlock.password);
+      setPassword('');
+      setCurrentPassword('');
+      setScheduleAllowOnly(Boolean(appBlock.scheduleAllowOnly));
 
       if (nativeFocusBridge.getInstalledApps) {
         void nativeFocusBridge.getInstalledApps().then(setInstalledApps);
@@ -108,16 +112,18 @@ export function AppBlockerDialog({
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredInstalled = installedApps.filter((item) =>
-    item.label.toLowerCase().includes(normalizedQuery)
+    (item.label.toLowerCase().includes(normalizedQuery) || item.packageName.includes(normalizedQuery))
   );
   const exactInstalledMatch = installedApps.some(
     (item) => item.label.toLowerCase() === normalizedQuery
   );
 
   const hasTarget = categories.length > 0 || apps.length > 0;
+  const requiresPassword = appBlock.enabled && appBlock.method === 'password';
+  const canChange = !requiresPassword || currentPassword === appBlock.password;
   const canSave =
-    hasTarget &&
-    (method !== 'password' || password.trim().length >= 4) &&
+    hasTarget && canChange &&
+    (method !== 'password' || (password.trim().length >= 4 || (requiresPassword && password.trim() === ''))) &&
     (method !== 'schedule' || scheduleDays.length > 0);
 
   return (
@@ -224,12 +230,12 @@ export function AppBlockerDialog({
             {installedApps.length > 0 ? (
               <div className="max-h-40 overflow-y-auto divide-y divide-black/8 dark:divide-white/8 border border-black/10 dark:border-white/10 bg-white dark:bg-[#121212]">
                 {filteredInstalled.map((item) => {
-                  const selected = apps.includes(item.label);
+                  const selected = apps.includes(item.packageName);
                   return (
                     <button
                       key={item.packageName}
                       type="button"
-                      onClick={() => toggleApp(item.label)}
+                      onClick={() => toggleApp(item.packageName)}
                       className="w-full min-h-[44px] px-3.5 flex items-center justify-between gap-3 text-left text-xs"
                     >
                       <span className="truncate font-medium text-black dark:text-white">
@@ -385,6 +391,19 @@ export function AppBlockerDialog({
             </div>
           )}
 
+          {method === 'schedule' && (
+            <label className="flex gap-2 text-xs">
+              <input type="checkbox" checked={scheduleAllowOnly} onChange={(e) => setScheduleAllowOnly(e.target.checked)} />
+              {language === 'es' ? 'Permitir solo en este horario' : 'Allow only during this schedule'}
+            </label>
+          )}
+          {requiresPassword && (
+            <label className="block space-y-1 text-xs">
+              <span>{language === 'es' ? 'Contraseña actual para cambiar o quitar el bloqueo' : 'Current password to change or remove the block'}</span>
+              <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+                className="block w-full min-h-[44px] border bg-transparent px-3" />
+            </label>
+          )}
           <div className="space-y-2 pt-2">
             <button
               type="button"
@@ -403,7 +422,8 @@ export function AppBlockerDialog({
                   scheduleDays,
                   scheduleStart,
                   scheduleEnd,
-                  password: password.trim(),
+                  scheduleAllowOnly,
+                  password: method === 'password' ? password.trim() || appBlock.password : '',
                 })
               }
               className={`w-full min-h-[48px] text-sm font-semibold transition-all ${
@@ -418,6 +438,7 @@ export function AppBlockerDialog({
             {appBlock.enabled && (
               <button
                 type="button"
+                disabled={!canChange}
                 onClick={onDisable}
                 className="w-full min-h-[44px] border border-black/15 dark:border-white/15 text-xs font-medium text-black/75 dark:text-white/75"
               >

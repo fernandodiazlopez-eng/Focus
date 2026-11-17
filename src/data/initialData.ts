@@ -8,10 +8,7 @@ export const NORMAL_DEACTIVATE_WAIT_MS = 15 * 60 * 1000; // 15 min wait in Norma
 export const COMPATIBLE_NETWORKS = [
   { id: 'Instagram', androidPackage: 'com.instagram.android' },
   { id: 'TikTok', androidPackage: 'com.zhiliaoapp.musically' },
-  { id: 'X', androidPackage: 'com.twitter.android' },
-  { id: 'Reddit', androidPackage: 'com.reddit.frontpage' },
-  { id: 'Facebook', androidPackage: 'com.facebook.katana' },
-  { id: 'Threads', androidPackage: 'com.instagram.barcelona' },
+  { id: 'YouTube', androidPackage: 'com.google.android.youtube' },
 ];
 
 export const APP_BLOCK_CATEGORIES: AppBlockCategory[] = [

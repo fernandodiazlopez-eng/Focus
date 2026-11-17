@@ -25,6 +25,7 @@
   }
 
   body {
+    overflow-x: clip;
     overscroll-behavior-y: contain;
     touch-action: manipulation;
     scrollbar-width: none;

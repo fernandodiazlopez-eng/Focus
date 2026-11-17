@@ -38,9 +38,12 @@ export function ActivateFocusDialog({
 
   const t = TRANSLATIONS[language].activateDialog;
 
+  const noScroll = selectedMode === 'no_scroll' || selectedMode === 'no_scroll_normal';
+  const es = language === 'es';
+
   const handleConfirm = () => {
-    if (selectedMode === 'normal') {
-      onConfirm('normal');
+    if (selectedMode === 'normal' || selectedMode === 'no_scroll_normal') {
+      onConfirm(selectedMode);
       return;
     }
 
@@ -54,7 +57,7 @@ export function ActivateFocusDialog({
       setPinError(t.pinMismatch);
       return;
     }
-    onConfirm('strict', trimmedPin);
+    onConfirm(selectedMode, trimmedPin);
   };
 
   return (
@@ -67,7 +70,7 @@ export function ActivateFocusDialog({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] text-black dark:text-white p-5 sm:p-6"
+        className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] text-black dark:text-white p-5 sm:p-6"
       >
         <CornerReticles active />
 
@@ -89,6 +92,11 @@ export function ActivateFocusDialog({
             </button>
           </div>
 
+          <p className="text-xs leading-relaxed opacity-75">
+            {es
+              ? 'Focus cuenta automáticamente el tiempo de feed. Con límite tienes dos bloques de 15 min, separados por una pausa de 2 h. La espera de 15 min de Normal solo sirve para desactivar Focus.'
+              : 'Focus counts feed time automatically. The daily limit gives you two 15-minute windows with a 2-hour break. Normal’s 15-minute wait applies only when turning Focus off.'}
+          </p>
           <div className="space-y-2.5" role="radiogroup" aria-label={t.title}>
             <button
               type="button"
@@ -156,9 +164,31 @@ export function ActivateFocusDialog({
                 {t.strictDesc}
               </p>
             </button>
+            <button type="button" role="radio" aria-checked={noScroll}
+              onClick={() => { setSelectedMode('no_scroll_normal'); setPinError(null); }}
+              className={"w-full border p-4 text-left " + (noScroll ? 'border-current' : 'border-black/12 dark:border-white/12')}>
+              <div className="text-sm font-semibold">{es ? 'Sin scroll' : 'No scroll'}</div>
+              <p className="mt-1 text-xs opacity-75">
+                {es ? 'Bloquea los feeds compatibles desde el primer segundo.' : 'Blocks supported feeds immediately.'}
+              </p>
+            </button>
           </div>
 
-          {selectedMode === 'strict' && (
+          {noScroll && (
+            <label className="block space-y-1 text-xs">
+              <span>{es ? 'Cómo quieres desactivarlo' : 'How to turn it off'}</span>
+              <select className="block min-h-[44px] w-full border bg-white px-3 dark:bg-[#121212]"
+                value={selectedMode} onChange={(event) => {
+                  setSelectedMode(event.target.value === 'no_scroll' ? 'no_scroll' : 'no_scroll_normal');
+                  setPinError(null);
+                }}>
+                <option value="no_scroll_normal">{es ? 'Esperar 15 minutos' : 'Wait 15 minutes'}</option>
+                <option value="no_scroll">{es ? 'Introducir PIN' : 'Enter PIN'}</option>
+              </select>
+            </label>
+          )}
+
+          {(selectedMode === 'strict' || selectedMode === 'no_scroll') && (
             <div className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block space-y-1.5">

@@ -48,7 +48,7 @@ export function reconcileConfig(
 
   if (
     config.status === 'active' &&
-    config.mode === 'normal' &&
+    (config.mode === 'normal' || config.mode === 'no_scroll_normal') &&
     config.pendingDeactivateAt !== null &&
     now >= config.pendingDeactivateAt
   ) {
@@ -234,48 +234,37 @@ export function saveTheme(theme: ThemeMode): void {
   }
 }
 
+type AndroidBridge = {
+  syncConfig(config: string): void;
+  getSnapshot(): string;
+  getPermissionsStatus(): string;
+  requestPermission(permission: keyof NativePermissionStatus): void;
+  getInstalledApps(): string;
+};
+
+const androidBridge = () => (window as Window & { FocusNativeBridge?: AndroidBridge }).FocusNativeBridge;
+
 export const nativeFocusBridge: NativeFocusBridge = {
-  isNativeAvailable(): boolean {
-    const win = window as unknown as { FocusNativeBridge?: unknown };
-    return Boolean(win.FocusNativeBridge);
-  },
-  async syncConfig(config: FocusConfig): Promise<void> {
+  isNativeAvailable: () => Boolean(androidBridge()),
+  async syncConfig(config) {
     saveConfig(config);
-    const win = window as unknown as { FocusNativeBridge?: NativeFocusBridge };
-    if (win.FocusNativeBridge?.syncConfig) {
-      await win.FocusNativeBridge.syncConfig(config);
-    }
+    androidBridge()?.syncConfig(JSON.stringify(config));
   },
-  async syncDailyState(state: DailyFocusState): Promise<void> {
-    saveDailyState(state);
-    const win = window as unknown as { FocusNativeBridge?: NativeFocusBridge };
-    if (win.FocusNativeBridge?.syncDailyState) {
-      await win.FocusNativeBridge.syncDailyState(state);
-    }
+  getSnapshot() {
+    const bridge = androidBridge();
+    return bridge ? JSON.parse(bridge.getSnapshot()) : null;
   },
-  async getPermissionsStatus(): Promise<NativePermissionStatus> {
-    const win = window as unknown as { FocusNativeBridge?: NativeFocusBridge };
-    if (win.FocusNativeBridge?.getPermissionsStatus) {
-      return win.FocusNativeBridge.getPermissionsStatus();
-    }
-    return {
-      accessibility: false,
-      usageStats: false,
-      overlay: false,
-      deviceAdmin: false,
+  async getPermissionsStatus() {
+    const bridge = androidBridge();
+    return bridge ? JSON.parse(bridge.getPermissionsStatus()) : {
+      accessibility: false, usageStats: false, overlay: false, deviceAdmin: false,
     };
   },
-  async requestPermission(permission: keyof NativePermissionStatus): Promise<void> {
-    const win = window as unknown as { FocusNativeBridge?: NativeFocusBridge };
-    if (win.FocusNativeBridge?.requestPermission) {
-      await win.FocusNativeBridge.requestPermission(permission);
-    }
+  async requestPermission(permission) {
+    androidBridge()?.requestPermission(permission);
   },
-  async getInstalledApps(): Promise<InstalledAppItem[]> {
-    const win = window as unknown as { FocusNativeBridge?: NativeFocusBridge };
-    if (win.FocusNativeBridge?.getInstalledApps) {
-      return win.FocusNativeBridge.getInstalledApps();
-    }
-    return [];
+  async getInstalledApps() {
+    const bridge = androidBridge();
+    return bridge ? JSON.parse(bridge.getInstalledApps()) : [];
   },
 };

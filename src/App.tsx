@@ -11,12 +11,7 @@ import {
   Language,
   ThemeMode,
 } from './types';
-import {
-  AUTO_PAUSE_MS,
-  DAILY_MAX_SCROLL_SECONDS,
-  NORMAL_DEACTIVATE_WAIT_MS,
-  WINDOW_MAX_SECONDS,
-} from './data/initialData';
+import { NORMAL_DEACTIVATE_WAIT_MS } from './data/initialData';
 import { TRANSLATIONS } from './i18n';
 import {
   loadConfig,
@@ -29,7 +24,6 @@ import {
   reconcileDailyState,
   saveLanguage,
   saveTheme,
-  upsertTodayHistory,
 } from './services/focusStorage';
 import { TopBar } from './components/TopBar';
 import { BottomDock } from './components/BottomDock';
@@ -60,104 +54,34 @@ export default function App() {
     []
   );
 
-  // Sync config & daily state to storage and native Android bridge
+  const [permissionGranted, setPermissionGranted] = useState(false);
   useEffect(() => {
     void nativeFocusBridge.syncConfig(config);
   }, [config]);
 
   useEffect(() => {
-    void nativeFocusBridge.syncDailyState(dailyState);
-    setHistory((prev) => upsertTodayHistory(prev, dailyState));
-  }, [dailyState]);
-
-  // Real-time reconciliation for midnight reset, 2h automatic pause, 15m deactivation wait, and app timer
-  useEffect(() => {
-    const id = window.setInterval(() => {
+    const refresh = () => {
       const now = Date.now();
-      setConfig((prev) => reconcileConfig(prev, now));
-      setDailyState((prev) => reconcileDailyState(prev, now));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        const now = Date.now();
-        setConfig((prev) => reconcileConfig(prev, now));
-        setDailyState((prev) => reconcileDailyState(prev, now));
+      setConfig((previous) => reconcileConfig(previous, now));
+      const snapshot = nativeFocusBridge.getSnapshot();
+      if (snapshot) {
+        setDailyState(snapshot.daily);
+        setHistory(snapshot.history);
+        void nativeFocusBridge.getPermissionsStatus?.().then((status) => setPermissionGranted(status.accessibility));
+      } else {
+        setDailyState((previous) => reconcileDailyState(previous, now));
       }
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () =>
-      document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  // Listen for scroll usage events dispatched by native Android WebView bridge
-  useEffect(() => {
-    const handleNativeUsage = (event: Event) => {
-      const custom = event as CustomEvent<{
-        network?: string;
-        seconds?: number;
-      }>;
-      const network = custom.detail?.network;
-      const seconds = custom.detail?.seconds ?? 0;
-      if (!network || seconds <= 0) return;
-
-      const now = Date.now();
-      setDailyState((prev) => {
-        const current = reconcileDailyState(prev, now);
-        if (
-          current.pauseEndsAt !== null ||
-          current.usedSecondsToday >= DAILY_MAX_SCROLL_SECONDS
-        ) {
-          return current;
-        }
-        const remainingWindow = Math.max(
-          0,
-          WINDOW_MAX_SECONDS - current.windowUsedSeconds
-        );
-        const remainingDaily = Math.max(
-          0,
-          DAILY_MAX_SCROLL_SECONDS - current.usedSecondsToday
-        );
-        const deducted = Math.min(seconds, remainingWindow, remainingDaily);
-        if (deducted <= 0) return current;
-
-        const nextWindowUsed = current.windowUsedSeconds + deducted;
-        const nextTotalUsed = current.usedSecondsToday + deducted;
-        const nextByNetwork = {
-          ...current.usedSecondsByNetwork,
-          [network]: (current.usedSecondsByNetwork[network] ?? 0) + deducted,
-        };
-
-        if (
-          current.windowIndex === 1 &&
-          nextWindowUsed >= WINDOW_MAX_SECONDS &&
-          nextTotalUsed < DAILY_MAX_SCROLL_SECONDS
-        ) {
-          return {
-            ...current,
-            usedSecondsToday: nextTotalUsed,
-            windowUsedSeconds: nextWindowUsed,
-            pauseEndsAt: now + AUTO_PAUSE_MS,
-            usedSecondsByNetwork: nextByNetwork,
-          };
-        }
-
-        return {
-          ...current,
-          usedSecondsToday: nextTotalUsed,
-          windowUsedSeconds: nextWindowUsed,
-          usedSecondsByNetwork: nextByNetwork,
-        };
-      });
+    refresh();
+    const interval = window.setInterval(refresh, 1000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
     };
-
-    window.addEventListener('focus:nativeScrollUsage', handleNativeUsage);
-    return () =>
-      window.removeEventListener('focus:nativeScrollUsage', handleNativeUsage);
   }, []);
+
+
 
   useEffect(() => {
     const root = document.documentElement;
@@ -176,12 +100,26 @@ export default function App() {
 
   const t = TRANSLATIONS[language];
 
+  const openProtectionSetup = async (setup: () => void) => {
+    if (!isNativeConnected) {
+      setup();
+      return;
+    }
+    const status = await nativeFocusBridge.getPermissionsStatus?.();
+    setPermissionGranted(Boolean(status?.accessibility));
+    if (status?.accessibility) {
+      setup();
+    } else {
+      await nativeFocusBridge.requestPermission?.('accessibility');
+    }
+  };
+
   const handleConfirmActivate = useCallback((mode: FocusMode, pin?: string) => {
     setConfig((prev) => ({
       ...prev,
       status: 'active',
       mode,
-      strictPin: mode === 'strict' && pin ? pin : prev.strictPin,
+      strictPin: pin ?? prev.strictPin,
       pendingDeactivateAt: null,
     }));
     setIsActivateOpen(false);
@@ -202,11 +140,11 @@ export default function App() {
     setIsManageOpen(false);
   }, []);
 
-  const handleSwitchToStrictWithPin = useCallback((pin: string) => {
+  const handleSwitchToProtectedMode = useCallback((mode: 'strict' | 'no_scroll', pin: string) => {
     setConfig((prev) => ({
       ...prev,
       status: 'active',
-      mode: 'strict',
+      mode,
       strictPin: pin,
       pendingDeactivateAt: null,
     }));
@@ -255,7 +193,29 @@ export default function App() {
           settingsAriaLabel={t.topBar.settingsLabel}
         />
 
-        <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-24">
+        <main className="mx-auto w-full min-w-0 max-w-3xl flex-1 px-4 pt-6 pb-24 sm:px-6">
+          {isNativeConnected && !permissionGranted && (
+            <section aria-label={language === 'es' ? 'Protección pendiente' : 'Protection pending'}
+              className="mb-4 space-y-2 border border-current/20 p-4 text-sm">
+              <p className="font-semibold" role="status">
+                {language === 'es' ? 'Protección pendiente: falta Accesibilidad' : 'Protection pending: Accessibility is off'}
+              </p>
+              <p className="text-xs opacity-75">
+                {language === 'es'
+                  ? 'Activa Accesibilidad para que funcionen el límite de scroll y el bloqueo de apps.'
+                  : 'Enable Accessibility to turn on the scroll limit and app blocking.'}
+              </p>
+              <button className="min-h-[44px] underline underline-offset-4" type="button"
+                onClick={() => void nativeFocusBridge.requestPermission?.('accessibility')}>
+                {language === 'es' ? 'Configurar Accesibilidad' : 'Set up Accessibility'}
+              </button>
+            </section>
+          )}
+          {isNativeConnected && permissionGranted && (
+            <p className="mb-4 text-xs opacity-70">
+              {language === 'es' ? 'Anti-scroll en pruebas · Instagram, TikTok y YouTube' : 'Anti-scroll in testing · Instagram, TikTok and YouTube'}
+            </p>
+          )}
           <AnimatePresence mode="wait" initial={false}>
             {activeTab === 'today' ? (
               <motion.div
@@ -269,10 +229,10 @@ export default function App() {
                   language={language}
                   config={config}
                   dailyState={dailyState}
-                  onOpenActivate={() => setIsActivateOpen(true)}
+                  onOpenActivate={() => void openProtectionSetup(() => setIsActivateOpen(true))}
                   onOpenManage={() => setIsManageOpen(true)}
                   onCancelPendingDeactivation={handleCancelPendingDeactivation}
-                  onOpenAppBlocker={(method) => setAppBlockDialogMethod(method)}
+                  onOpenAppBlocker={(method) => void openProtectionSetup(() => setAppBlockDialogMethod(method))}
                 />
               </motion.div>
             ) : (
@@ -316,7 +276,7 @@ export default function App() {
           pendingDeactivateAt={config.pendingDeactivateAt}
           onRequestDeactivateNormal={handleRequestDeactivateNormal}
           onCancelPendingDeactivation={handleCancelPendingDeactivation}
-          onSwitchToStrictWithPin={handleSwitchToStrictWithPin}
+          onSwitchToProtectedMode={handleSwitchToProtectedMode}
           onStrictVerifyAndApply={handleStrictVerifyAndApply}
           onClose={() => setIsManageOpen(false)}
         />
@@ -335,9 +295,7 @@ export default function App() {
           open={isSettingsOpen}
           language={language}
           theme={theme}
-          config={config}
           isNativeConnected={isNativeConnected}
-          onChangeConfig={setConfig}
           onChangeLanguage={setLanguage}
           onChangeTheme={setTheme}
           onClose={() => setIsSettingsOpen(false)}

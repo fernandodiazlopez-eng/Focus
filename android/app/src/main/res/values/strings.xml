@@ -1,0 +1,10 @@
+<resources>
+    <string name="service_description">Focus identifies the foreground app and supported screens to apply your limits. It does not save or send message contents.</string>
+    <string name="accessibility_disclosure_title">How Focus uses Accessibility</string>
+    <string name="accessibility_disclosure_message">Focus uses Android Accessibility to identify the app you have open and inspect screen controls in Instagram, TikTok, and YouTube. This lets it detect feeds, measure feed time, and take you out of a feed or app when a rule you enabled blocks it. Focus stores your feed time per app on this device. It does not save or send screen contents or messages. You can disable the service in Android Accessibility settings.</string>
+    <string name="accessibility_not_now">Not now</string>
+    <string name="accessibility_accept">Agree and open settings</string>
+    <string name="app_blocked">App blocked by Focus</string>
+    <string name="feed_blocked">Feed paused by Focus</string>
+    <string name="explore_search_only">Search is available above</string>
+</resources>

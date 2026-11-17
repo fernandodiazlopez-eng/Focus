@@ -2,7 +2,7 @@ export type Language = 'es' | 'en';
 export type ThemeMode = 'dark' | 'light';
 export type ActiveTab = 'today' | 'stats';
 
-export type FocusMode = 'normal' | 'strict';
+export type FocusMode = 'normal' | 'strict' | 'no_scroll' | 'no_scroll_normal';
 export type FocusStatus = 'inactive' | 'active';
 export type AppBlockMethod = 'timer' | 'schedule' | 'password';
 export type AppBlockCategory = 'social' | 'video' | 'games' | 'browsers';
@@ -23,6 +23,7 @@ export interface IndependentAppBlock {
   scheduleDays: string[];
   scheduleStart: string;
   scheduleEnd: string;
+  scheduleAllowOnly?: boolean;
   password: string;
 }
 
@@ -60,7 +61,7 @@ export interface NativePermissionStatus {
 export interface NativeFocusBridge {
   isNativeAvailable(): boolean;
   syncConfig(config: FocusConfig): Promise<void>;
-  syncDailyState(state: DailyFocusState): Promise<void>;
+  getSnapshot(): { daily: DailyFocusState; history: Record<string, DailyHistoryEntry> } | null;
   getPermissionsStatus?(): Promise<NativePermissionStatus>;
   requestPermission?(permission: keyof NativePermissionStatus): Promise<void>;
   getInstalledApps?(): Promise<InstalledAppItem[]>;

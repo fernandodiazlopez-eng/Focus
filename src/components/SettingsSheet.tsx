@@ -5,13 +5,9 @@ import {
   Sun,
   ChevronDown,
   ChevronUp,
-  ShieldAlert,
   ShieldCheck,
-  Activity,
-  Layers,
 } from 'lucide-react';
 import {
-  FocusConfig,
   Language,
   NativePermissionStatus,
   ThemeMode,
@@ -24,9 +20,7 @@ interface SettingsSheetProps {
   open: boolean;
   language: Language;
   theme: ThemeMode;
-  config: FocusConfig;
   isNativeConnected: boolean;
-  onChangeConfig: (next: FocusConfig) => void;
   onChangeLanguage: (lang: Language) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onClose: () => void;
@@ -36,9 +30,7 @@ export function SettingsSheet({
   open,
   language,
   theme,
-  config,
   isNativeConnected,
-  onChangeConfig,
   onChangeLanguage,
   onChangeTheme,
   onClose,
@@ -50,94 +42,28 @@ export function SettingsSheet({
     overlay: false,
     deviceAdmin: false,
   });
-  const [showPinPrompt, setShowPinPrompt] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!open) {
       setAdvancedOpen(false);
-      setShowPinPrompt(false);
-      setPinInput('');
-      setPinError(null);
       return;
     }
-
-    if (isNativeConnected && nativeFocusBridge.getPermissionsStatus) {
-      void nativeFocusBridge.getPermissionsStatus().then(setPermStatus);
-    }
+    if (!isNativeConnected) return;
+    const refresh = () => void nativeFocusBridge.getPermissionsStatus?.().then(setPermStatus);
+    refresh();
+    document.addEventListener('visibilitychange', refresh);
+    return () => document.removeEventListener('visibilitychange', refresh);
   }, [open, isNativeConnected]);
 
   if (!open) return null;
 
   const t = TRANSLATIONS[language].settings;
 
-  const handleToggleUninstallProtection = () => {
-    if (!config.uninstallProtection) {
-      onChangeConfig({ ...config, uninstallProtection: true });
-      if (isNativeConnected && nativeFocusBridge.requestPermission) {
-        void nativeFocusBridge.requestPermission('deviceAdmin');
-      }
-      return;
-    }
-
-    if (
-      config.status === 'active' &&
-      config.mode === 'strict' &&
-      config.strictPin
-    ) {
-      setShowPinPrompt(true);
-      setPinInput('');
-      setPinError(null);
-      return;
-    }
-
-    onChangeConfig({ ...config, uninstallProtection: false });
-  };
-
-  const handleConfirmDisableWithPin = () => {
-    if (pinInput.trim() !== config.strictPin) {
-      setPinError(t.uninstallPinInvalid);
-      return;
-    }
-    setShowPinPrompt(false);
-    setPinInput('');
-    setPinError(null);
-    onChangeConfig({ ...config, uninstallProtection: false });
-  };
-
-  const androidRows: Array<{
-    key: keyof NativePermissionStatus;
-    icon: typeof ShieldCheck;
-    title: string;
-    desc: string;
-    granted: boolean;
-  }> = [
-    {
-      key: 'deviceAdmin',
-      icon: ShieldAlert,
-      ...t.androidPerms.deviceAdmin,
-      granted: isNativeConnected ? permStatus.deviceAdmin : false,
-    },
-    {
-      key: 'accessibility',
-      icon: ShieldCheck,
-      ...t.androidPerms.accessibility,
-      granted: isNativeConnected ? permStatus.accessibility : false,
-    },
-    {
-      key: 'usageStats',
-      icon: Activity,
-      ...t.androidPerms.usageStats,
-      granted: isNativeConnected ? permStatus.usageStats : false,
-    },
-    {
-      key: 'overlay',
-      icon: Layers,
-      ...t.androidPerms.overlay,
-      granted: isNativeConnected ? permStatus.overlay : false,
-    },
-  ];
+  const androidRows = [{
+    key: 'accessibility' as const,
+    icon: ShieldCheck,
+    ...t.androidPerms.accessibility,
+    granted: permStatus.accessibility,
+  }];
 
   return (
     <div
@@ -255,91 +181,10 @@ export function SettingsSheet({
 
             {advancedOpen && (
               <div className="px-4 pb-4 pt-3 border-t border-black/8 dark:border-white/8 space-y-5">
-                {/* Anti-Uninstall Protection */}
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="text-xs sm:text-sm font-medium text-black dark:text-white">
-                        {t.uninstallTitle}
-                      </div>
-                      <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed">
-                        {t.uninstallDesc}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={config.uninstallProtection}
-                      aria-label={t.uninstallTitle}
-                      onClick={handleToggleUninstallProtection}
-                      className="min-h-[44px] min-w-[56px] flex items-center justify-end shrink-0"
-                    >
-                      <span
-                        className={`relative inline-flex h-6 w-12 items-center border transition-colors duration-150 ${
-                          config.uninstallProtection
-                            ? 'bg-black border-black dark:bg-white dark:border-white'
-                            : 'bg-black/[0.06] border-black/20 dark:bg-white/[0.08] dark:border-white/20'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transition-transform duration-150 ${
-                            config.uninstallProtection
-                              ? 'translate-x-[26px] bg-white dark:bg-black'
-                              : 'translate-x-[3px] bg-black/70 dark:bg-white/70'
-                          }`}
-                        />
-                      </span>
-                    </button>
-                  </div>
-
-                  {showPinPrompt && (
-                    <div className="pt-3 border-t border-black/10 dark:border-white/10 space-y-3">
-                      <label className="block space-y-1.5">
-                        <span className="block text-xs font-medium text-black/65 dark:text-white/65">
-                          {t.uninstallPinPrompt}
-                        </span>
-                        <input
-                          type="password"
-                          inputMode="numeric"
-                          value={pinInput}
-                          onChange={(e) => {
-                            setPinInput(e.target.value);
-                            setPinError(null);
-                          }}
-                          placeholder="PIN"
-                          className="w-full min-h-[44px] border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] px-3 text-sm font-digital tracking-widest focus:outline-none focus:border-black dark:focus:border-white"
-                        />
-                      </label>
-
-                      {pinError && (
-                        <p className="text-xs font-medium text-black dark:text-white">
-                          {pinError}
-                        </p>
-                      )}
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowPinPrompt(false);
-                            setPinError(null);
-                          }}
-                          className="min-h-[42px] px-3 border border-black/15 dark:border-white/15 text-xs font-medium"
-                        >
-                          {t.uninstallCancel}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleConfirmDisableWithPin}
-                          className="flex-1 min-h-[42px] bg-black text-white dark:bg-white dark:text-black text-xs font-semibold"
-                        >
-                          {t.uninstallConfirm}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  {language === 'es' ? 'Protección contra desinstalación disponible solo en dispositivos gestionados.'
+                    : 'Uninstall protection is available only on managed devices.'}
+                </p>
 
                 {/* Android Permissions */}
                 <div className="space-y-2.5 pt-3 border-t border-black/8 dark:border-white/8">
