@@ -1,50 +1,163 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import {
   ActiveTab,
-  FocusPlan,
+  AppBlockMethod,
+  DailyFocusState,
+  DailyHistoryEntry,
+  FocusConfig,
+  FocusMode,
+  IndependentAppBlock,
   Language,
-  StatsPeriod,
   ThemeMode,
 } from './types';
+import {
+  AUTO_PAUSE_MS,
+  DAILY_MAX_SCROLL_SECONDS,
+  NORMAL_DEACTIVATE_WAIT_MS,
+  WINDOW_MAX_SECONDS,
+} from './data/initialData';
 import { TRANSLATIONS } from './i18n';
 import {
+  loadConfig,
+  loadDailyState,
+  loadHistory,
   loadLanguage,
-  loadPlans,
   loadTheme,
+  nativeFocusBridge,
+  reconcileConfig,
+  reconcileDailyState,
   saveLanguage,
   saveTheme,
-  webFocusBridge,
+  upsertTodayHistory,
 } from './services/focusStorage';
 import { TopBar } from './components/TopBar';
 import { BottomDock } from './components/BottomDock';
-import { PlansView } from './components/PlansView';
+import { TodayView } from './components/TodayView';
 import { StatsView } from './components/StatsView';
-import { CreatePlanSheet } from './components/CreatePlanSheet';
+import { ActivateFocusDialog } from './components/ActivateFocusDialog';
+import { ManageFocusDialog } from './components/ManageFocusDialog';
+import { AppBlockerDialog } from './components/AppBlockerDialog';
 import { SettingsSheet } from './components/SettingsSheet';
-import { PasswordPromptSheet } from './components/PasswordPromptSheet';
-import { DelayUnlockSheet } from './components/DelayUnlockSheet';
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(loadLanguage);
   const [theme, setTheme] = useState<ThemeMode>(loadTheme);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('plans');
-  const [plans, setPlans] = useState<FocusPlan[]>(loadPlans);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('today');
+  const [config, setConfig] = useState<FocusConfig>(loadConfig);
+  const [dailyState, setDailyState] = useState<DailyFocusState>(loadDailyState);
+  const [history, setHistory] =
+    useState<Record<string, DailyHistoryEntry>>(loadHistory);
 
-  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('today');
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState<FocusPlan | null>(null);
+  const [isActivateOpen, setIsActivateOpen] = useState(false);
+  const [isManageOpen, setIsManageOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [appBlockDialogMethod, setAppBlockDialogMethod] =
+    useState<AppBlockMethod | null>(null);
 
-  const [pendingChallenge, setPendingChallenge] = useState<{
-    plan: FocusPlan;
-    intent: 'toggle' | 'edit';
-    mode: 'password' | 'delay';
-  } | null>(null);
+  const isNativeConnected = useMemo(
+    () => nativeFocusBridge.isNativeAvailable(),
+    []
+  );
+
+  // Sync config & daily state to storage and native Android bridge
+  useEffect(() => {
+    void nativeFocusBridge.syncConfig(config);
+  }, [config]);
 
   useEffect(() => {
-    void webFocusBridge.syncPlans(plans);
-  }, [plans]);
+    void nativeFocusBridge.syncDailyState(dailyState);
+    setHistory((prev) => upsertTodayHistory(prev, dailyState));
+  }, [dailyState]);
+
+  // Real-time reconciliation for midnight reset, 2h automatic pause, 15m deactivation wait, and app timer
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setConfig((prev) => reconcileConfig(prev, now));
+      setDailyState((prev) => reconcileDailyState(prev, now));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        setConfig((prev) => reconcileConfig(prev, now));
+        setDailyState((prev) => reconcileDailyState(prev, now));
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () =>
+      document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  // Listen for scroll usage events dispatched by native Android WebView bridge
+  useEffect(() => {
+    const handleNativeUsage = (event: Event) => {
+      const custom = event as CustomEvent<{
+        network?: string;
+        seconds?: number;
+      }>;
+      const network = custom.detail?.network;
+      const seconds = custom.detail?.seconds ?? 0;
+      if (!network || seconds <= 0) return;
+
+      const now = Date.now();
+      setDailyState((prev) => {
+        const current = reconcileDailyState(prev, now);
+        if (
+          current.pauseEndsAt !== null ||
+          current.usedSecondsToday >= DAILY_MAX_SCROLL_SECONDS
+        ) {
+          return current;
+        }
+        const remainingWindow = Math.max(
+          0,
+          WINDOW_MAX_SECONDS - current.windowUsedSeconds
+        );
+        const remainingDaily = Math.max(
+          0,
+          DAILY_MAX_SCROLL_SECONDS - current.usedSecondsToday
+        );
+        const deducted = Math.min(seconds, remainingWindow, remainingDaily);
+        if (deducted <= 0) return current;
+
+        const nextWindowUsed = current.windowUsedSeconds + deducted;
+        const nextTotalUsed = current.usedSecondsToday + deducted;
+        const nextByNetwork = {
+          ...current.usedSecondsByNetwork,
+          [network]: (current.usedSecondsByNetwork[network] ?? 0) + deducted,
+        };
+
+        if (
+          current.windowIndex === 1 &&
+          nextWindowUsed >= WINDOW_MAX_SECONDS &&
+          nextTotalUsed < DAILY_MAX_SCROLL_SECONDS
+        ) {
+          return {
+            ...current,
+            usedSecondsToday: nextTotalUsed,
+            windowUsedSeconds: nextWindowUsed,
+            pauseEndsAt: now + AUTO_PAUSE_MS,
+            usedSecondsByNetwork: nextByNetwork,
+          };
+        }
+
+        return {
+          ...current,
+          usedSecondsToday: nextTotalUsed,
+          windowUsedSeconds: nextWindowUsed,
+          usedSecondsByNetwork: nextByNetwork,
+        };
+      });
+    };
+
+    window.addEventListener('focus:nativeScrollUsage', handleNativeUsage);
+    return () =>
+      window.removeEventListener('focus:nativeScrollUsage', handleNativeUsage);
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -63,75 +176,75 @@ export default function App() {
 
   const t = TRANSLATIONS[language];
 
-  const handleTogglePlan = (id: string) => {
-    const target = plans.find((p) => p.id === id);
-    if (!target) return;
+  const handleConfirmActivate = useCallback((mode: FocusMode, pin?: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      status: 'active',
+      mode,
+      strictPin: mode === 'strict' && pin ? pin : prev.strictPin,
+      pendingDeactivateAt: null,
+    }));
+    setIsActivateOpen(false);
+  }, []);
 
-    if (target.active && target.protection === 'password') {
-      setPendingChallenge({ plan: target, intent: 'toggle', mode: 'password' });
-      return;
-    }
+  const handleRequestDeactivateNormal = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      pendingDeactivateAt: Date.now() + NORMAL_DEACTIVATE_WAIT_MS,
+    }));
+  }, []);
 
-    if (target.active && target.protection === 'delay') {
-      setPendingChallenge({ plan: target, intent: 'toggle', mode: 'delay' });
-      return;
-    }
+  const handleCancelPendingDeactivation = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      pendingDeactivateAt: null,
+    }));
+    setIsManageOpen(false);
+  }, []);
 
-    setPlans((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, active: !p.active } : p))
-    );
-  };
+  const handleSwitchToStrictWithPin = useCallback((pin: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      status: 'active',
+      mode: 'strict',
+      strictPin: pin,
+      pendingDeactivateAt: null,
+    }));
+    setIsManageOpen(false);
+  }, []);
 
-  const handleOpenCreate = () => {
-    setEditingPlan(null);
-    setIsEditorOpen(true);
-  };
+  const handleStrictVerifyAndApply = useCallback(
+    (action: 'to_normal' | 'deactivate') => {
+      setConfig((prev) => ({
+        ...prev,
+        status: action === 'deactivate' ? 'inactive' : 'active',
+        mode: action === 'to_normal' ? 'normal' : prev.mode,
+        pendingDeactivateAt: null,
+      }));
+      setIsManageOpen(false);
+    },
+    []
+  );
 
-  const handleOpenEdit = (plan: FocusPlan) => {
-    if (plan.active && plan.protection === 'password') {
-      setPendingChallenge({ plan, intent: 'edit', mode: 'password' });
-      return;
-    }
-    if (plan.active && plan.protection === 'delay') {
-      setPendingChallenge({ plan, intent: 'edit', mode: 'delay' });
-      return;
-    }
-    setEditingPlan(plan);
-    setIsEditorOpen(true);
-  };
+  const handleSaveAppBlock = useCallback((nextBlock: IndependentAppBlock) => {
+    setConfig((prev) => ({
+      ...prev,
+      appBlock: nextBlock,
+    }));
+    setAppBlockDialogMethod(null);
+  }, []);
 
-  const handleChallengeSuccess = () => {
-    if (!pendingChallenge) return;
-    const { plan, intent } = pendingChallenge;
-    setPendingChallenge(null);
-
-    if (intent === 'toggle') {
-      setPlans((prev) =>
-        prev.map((p) => (p.id === plan.id ? { ...p, active: false } : p))
-      );
-    } else {
-      setEditingPlan(plan);
-      setIsEditorOpen(true);
-    }
-  };
-
-  const handleSavePlan = (savedPlan: FocusPlan) => {
-    setPlans((prev) => {
-      const exists = prev.some((p) => p.id === savedPlan.id);
-      if (exists) {
-        return prev.map((p) => (p.id === savedPlan.id ? savedPlan : p));
-      }
-      return [savedPlan, ...prev];
-    });
-    setIsEditorOpen(false);
-    setEditingPlan(null);
-  };
-
-  const handleDeletePlan = (id: string) => {
-    setPlans((prev) => prev.filter((p) => p.id !== id));
-    setIsEditorOpen(false);
-    setEditingPlan(null);
-  };
+  const handleDisableAppBlock = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      appBlock: {
+        ...prev.appBlock,
+        enabled: false,
+        timerEndsAt: null,
+      },
+    }));
+    setAppBlockDialogMethod(null);
+  }, []);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -139,25 +252,27 @@ export default function App() {
         <TopBar
           brand={t.brand}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          settingsAriaLabel={t.settings.title}
+          settingsAriaLabel={t.topBar.settingsLabel}
         />
 
-        <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 pt-5 pb-24">
+        <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-24">
           <AnimatePresence mode="wait" initial={false}>
-            {activeTab === 'plans' ? (
+            {activeTab === 'today' ? (
               <motion.div
-                key="plans"
+                key="today"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
               >
-                <PlansView
+                <TodayView
                   language={language}
-                  plans={plans}
-                  onTogglePlan={handleTogglePlan}
-                  onEditPlan={handleOpenEdit}
-                  onCreatePlan={handleOpenCreate}
+                  config={config}
+                  dailyState={dailyState}
+                  onOpenActivate={() => setIsActivateOpen(true)}
+                  onOpenManage={() => setIsManageOpen(true)}
+                  onCancelPendingDeactivation={handleCancelPendingDeactivation}
+                  onOpenAppBlocker={(method) => setAppBlockDialogMethod(method)}
                 />
               </motion.div>
             ) : (
@@ -170,8 +285,8 @@ export default function App() {
               >
                 <StatsView
                   language={language}
-                  period={statsPeriod}
-                  onChangePeriod={setStatsPeriod}
+                  dailyState={dailyState}
+                  history={history}
                 />
               </motion.div>
             )}
@@ -181,43 +296,48 @@ export default function App() {
         <BottomDock
           activeTab={activeTab}
           onChangeTab={setActiveTab}
-          plansLabel={t.tabs.plans}
+          todayLabel={t.tabs.today}
           statsLabel={t.tabs.stats}
         />
 
-        <CreatePlanSheet
-          open={isEditorOpen}
+        <ActivateFocusDialog
+          open={isActivateOpen}
           language={language}
-          editingPlan={editingPlan}
-          onClose={() => {
-            setIsEditorOpen(false);
-            setEditingPlan(null);
-          }}
-          onSave={handleSavePlan}
-          onDelete={handleDeletePlan}
+          initialMode={config.mode}
+          onConfirm={handleConfirmActivate}
+          onClose={() => setIsActivateOpen(false)}
         />
 
-        <PasswordPromptSheet
-          open={pendingChallenge?.mode === 'password'}
+        <ManageFocusDialog
+          open={isManageOpen}
           language={language}
-          planName={pendingChallenge?.plan.name ?? ''}
-          expectedPassword={pendingChallenge?.plan.password ?? '1234'}
-          onSuccess={handleChallengeSuccess}
-          onCancel={() => setPendingChallenge(null)}
+          mode={config.mode}
+          strictPin={config.strictPin}
+          pendingDeactivateAt={config.pendingDeactivateAt}
+          onRequestDeactivateNormal={handleRequestDeactivateNormal}
+          onCancelPendingDeactivation={handleCancelPendingDeactivation}
+          onSwitchToStrictWithPin={handleSwitchToStrictWithPin}
+          onStrictVerifyAndApply={handleStrictVerifyAndApply}
+          onClose={() => setIsManageOpen(false)}
         />
 
-        <DelayUnlockSheet
-          open={pendingChallenge?.mode === 'delay'}
+        <AppBlockerDialog
+          open={appBlockDialogMethod !== null}
+          method={appBlockDialogMethod ?? 'timer'}
           language={language}
-          planName={pendingChallenge?.plan.name ?? ''}
-          onComplete={handleChallengeSuccess}
-          onCancel={() => setPendingChallenge(null)}
+          appBlock={config.appBlock}
+          onSave={handleSaveAppBlock}
+          onDisable={handleDisableAppBlock}
+          onClose={() => setAppBlockDialogMethod(null)}
         />
 
         <SettingsSheet
           open={isSettingsOpen}
           language={language}
           theme={theme}
+          config={config}
+          isNativeConnected={isNativeConnected}
+          onChangeConfig={setConfig}
           onChangeLanguage={setLanguage}
           onChangeTheme={setTheme}
           onClose={() => setIsSettingsOpen(false)}

@@ -48,19 +48,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle cyberpunk grid surface (clean 1px hairlines, no dots) */
+/* Balanced architectural grid background */
 .cyber-grid-bg {
   background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(0, 0, 0, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.045) 1px, transparent 1px);
   background-size: 28px 28px;
+  background-position: top center;
 }
 
 .dark .cyber-grid-bg {
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
   background-size: 28px 28px;
+  background-position: top center;
 }
 
 /* Safe area helpers for mobile notches & Android/iOS gesture bars */

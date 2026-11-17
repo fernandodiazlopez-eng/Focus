@@ -1,23 +1,32 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Moon,
   Sun,
-  Smartphone,
-  Eye,
-  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  ShieldAlert,
   ShieldCheck,
   Activity,
   Layers,
-  Lock,
 } from 'lucide-react';
-import { Language, ThemeMode } from '../types';
+import {
+  FocusConfig,
+  Language,
+  NativePermissionStatus,
+  ThemeMode,
+} from '../types';
 import { TRANSLATIONS } from '../i18n';
+import { nativeFocusBridge } from '../services/focusStorage';
+import { CornerReticles } from './HardwarePrimitives';
 
 interface SettingsSheetProps {
   open: boolean;
   language: Language;
   theme: ThemeMode;
+  config: FocusConfig;
+  isNativeConnected: boolean;
+  onChangeConfig: (next: FocusConfig) => void;
   onChangeLanguage: (lang: Language) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onClose: () => void;
@@ -27,30 +36,112 @@ export function SettingsSheet({
   open,
   language,
   theme,
+  config,
+  isNativeConnected,
+  onChangeConfig,
   onChangeLanguage,
   onChangeTheme,
   onClose,
 }: SettingsSheetProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [permStatus, setPermStatus] = useState<NativePermissionStatus>({
+    accessibility: false,
+    usageStats: false,
+    overlay: false,
+    deviceAdmin: false,
+  });
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setAdvancedOpen(false);
+      setShowPinPrompt(false);
+      setPinInput('');
+      setPinError(null);
+      return;
+    }
+
+    if (isNativeConnected && nativeFocusBridge.getPermissionsStatus) {
+      void nativeFocusBridge.getPermissionsStatus().then(setPermStatus);
+    }
+  }, [open, isNativeConnected]);
+
   if (!open) return null;
 
   const t = TRANSLATIONS[language].settings;
 
-  const androidRows = [
-    { icon: ShieldCheck, ...t.androidPerms.accessibility },
-    { icon: Activity, ...t.androidPerms.usageStats },
-    { icon: Layers, ...t.androidPerms.overlay },
-  ];
+  const handleToggleUninstallProtection = () => {
+    if (!config.uninstallProtection) {
+      onChangeConfig({ ...config, uninstallProtection: true });
+      if (isNativeConnected && nativeFocusBridge.requestPermission) {
+        void nativeFocusBridge.requestPermission('deviceAdmin');
+      }
+      return;
+    }
 
-  const futureRows = [
-    { icon: Eye, ...t.futureItems.grayscale },
-    { icon: Lock, ...t.futureItems.antiUninstall },
-    { icon: Smartphone, ...t.futureItems.haptics },
-    { icon: CalendarClock, ...t.futureItems.profiles },
+    if (
+      config.status === 'active' &&
+      config.mode === 'strict' &&
+      config.strictPin
+    ) {
+      setShowPinPrompt(true);
+      setPinInput('');
+      setPinError(null);
+      return;
+    }
+
+    onChangeConfig({ ...config, uninstallProtection: false });
+  };
+
+  const handleConfirmDisableWithPin = () => {
+    if (pinInput.trim() !== config.strictPin) {
+      setPinError(t.uninstallPinInvalid);
+      return;
+    }
+    setShowPinPrompt(false);
+    setPinInput('');
+    setPinError(null);
+    onChangeConfig({ ...config, uninstallProtection: false });
+  };
+
+  const androidRows: Array<{
+    key: keyof NativePermissionStatus;
+    icon: typeof ShieldCheck;
+    title: string;
+    desc: string;
+    granted: boolean;
+  }> = [
+    {
+      key: 'deviceAdmin',
+      icon: ShieldAlert,
+      ...t.androidPerms.deviceAdmin,
+      granted: isNativeConnected ? permStatus.deviceAdmin : false,
+    },
+    {
+      key: 'accessibility',
+      icon: ShieldCheck,
+      ...t.androidPerms.accessibility,
+      granted: isNativeConnected ? permStatus.accessibility : false,
+    },
+    {
+      key: 'usageStats',
+      icon: Activity,
+      ...t.androidPerms.usageStats,
+      granted: isNativeConnected ? permStatus.usageStats : false,
+    },
+    {
+      key: 'overlay',
+      icon: Layers,
+      ...t.androidPerms.overlay,
+      granted: isNativeConnected ? permStatus.overlay : false,
+    },
   ];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-sheet-title"
@@ -58,14 +149,10 @@ export function SettingsSheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[90dvh] flex flex-col rounded-t-3xl sm:rounded-3xl border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] text-black dark:text-white overflow-hidden"
+        className="relative w-full max-w-md max-h-[88dvh] flex flex-col border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] text-black dark:text-white overflow-hidden"
       >
-        {/* Mobile grab handle */}
-        <div className="pt-3 pb-1 flex justify-center sm:hidden">
-          <span className="h-1.5 w-10 rounded-full bg-black/20 dark:bg-white/20" />
-        </div>
+        <CornerReticles active />
 
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-black/10 dark:border-white/10">
           <h2 id="settings-sheet-title" className="text-lg font-semibold tracking-tight">
             {t.title}
@@ -74,167 +161,236 @@ export function SettingsSheet({
             type="button"
             onClick={onClose}
             aria-label={t.close}
-            className="min-h-[44px] min-w-[44px] -mr-2 flex items-center justify-center rounded-xl text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
+            className="min-h-[44px] min-w-[44px] -mr-2 flex items-center justify-center text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6 pb-safe">
-          {/* Language */}
-          <div className="space-y-3">
-            <div className="space-y-0.5">
-              <div className="text-sm font-medium text-black dark:text-white">
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+          {/* Language & Appearance */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <span className="block text-xs font-medium text-black/60 dark:text-white/60">
                 {t.languageLabel}
-              </div>
-              <div className="text-xs text-black/55 dark:text-white/55">
-                {t.languageDesc}
+              </span>
+              <div className="grid grid-cols-2 gap-1 border border-black/10 dark:border-white/10 bg-black/[0.04] dark:bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => onChangeLanguage('es')}
+                  className={`min-h-[40px] text-xs font-medium ${
+                    language === 'es'
+                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      : 'text-black/60 dark:text-white/60'
+                  }`}
+                >
+                  Español
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeLanguage('en')}
+                  className={`min-h-[40px] text-xs font-medium ${
+                    language === 'en'
+                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      : 'text-black/60 dark:text-white/60'
+                  }`}
+                >
+                  English
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-1 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.04] dark:bg-white/[0.04] p-1">
-              <button
-                type="button"
-                onClick={() => onChangeLanguage('es')}
-                className={`min-h-[44px] rounded-xl text-sm font-medium transition-colors duration-150 ${
-                  language === 'es'
-                    ? 'bg-black text-white dark:bg-white dark:text-black'
-                    : 'text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white'
-                }`}
-              >
-                Español
-              </button>
-              <button
-                type="button"
-                onClick={() => onChangeLanguage('en')}
-                className={`min-h-[44px] rounded-xl text-sm font-medium transition-colors duration-150 ${
-                  language === 'en'
-                    ? 'bg-black text-white dark:bg-white dark:text-black'
-                    : 'text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white'
-                }`}
-              >
-                English
-              </button>
-            </div>
-          </div>
-
-          <div className="border-t border-black/8 dark:border-white/8" />
-
-          {/* Theme */}
-          <div className="space-y-3">
-            <div className="space-y-0.5">
-              <div className="text-sm font-medium text-black dark:text-white">
+            <div className="space-y-2">
+              <span className="block text-xs font-medium text-black/60 dark:text-white/60">
                 {t.themeLabel}
+              </span>
+              <div className="grid grid-cols-2 gap-1 border border-black/10 dark:border-white/10 bg-black/[0.04] dark:bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => onChangeTheme('dark')}
+                  className={`min-h-[40px] text-xs font-medium flex items-center justify-center gap-1.5 ${
+                    theme === 'dark'
+                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      : 'text-black/60 dark:text-white/60'
+                  }`}
+                >
+                  <Moon className="h-3.5 w-3.5" />
+                  <span>{t.themeDark}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeTheme('light')}
+                  className={`min-h-[40px] text-xs font-medium flex items-center justify-center gap-1.5 ${
+                    theme === 'light'
+                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      : 'text-black/60 dark:text-white/60'
+                  }`}
+                >
+                  <Sun className="h-3.5 w-3.5" />
+                  <span>{t.themeLight}</span>
+                </button>
               </div>
-              <div className="text-xs text-black/55 dark:text-white/55">
-                {t.themeDesc}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => onChangeTheme('dark')}
-                className={`min-h-[52px] flex items-center justify-center gap-2 rounded-2xl border text-sm font-medium transition-colors duration-150 ${
-                  theme === 'dark'
-                    ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white'
-                    : 'bg-white dark:bg-[#121212] border-black/12 dark:border-white/12 text-black/75 dark:text-white/75'
-                }`}
-              >
-                <Moon className="h-4 w-4" />
-                <span>{t.themeDark}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onChangeTheme('light')}
-                className={`min-h-[52px] flex items-center justify-center gap-2 rounded-2xl border text-sm font-medium transition-colors duration-150 ${
-                  theme === 'light'
-                    ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white'
-                    : 'bg-white dark:bg-[#121212] border-black/12 dark:border-white/12 text-black/75 dark:text-white/75'
-                }`}
-              >
-                <Sun className="h-4 w-4" />
-                <span>{t.themeLight}</span>
-              </button>
             </div>
           </div>
 
           <div className="border-t border-black/8 dark:border-white/8" />
 
-          {/* Android APK Native Permissions Architecture */}
-          <div className="space-y-3">
-            <div className="text-xs font-medium text-black/55 dark:text-white/55">
-              {t.androidLabel}
-            </div>
+          {/* Advanced Settings Collapsible Section */}
+          <div className="border border-black/12 dark:border-white/12 bg-white dark:bg-[#101010]">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              aria-expanded={advancedOpen}
+              className="w-full min-h-[48px] px-4 py-3 flex items-center justify-between gap-3 text-left"
+            >
+              <span className="text-sm font-medium text-black dark:text-white">
+                {t.advancedTitle}
+              </span>
+              {advancedOpen ? (
+                <ChevronUp className="h-4 w-4 text-black/60 dark:text-white/60" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-black/60 dark:text-white/60" />
+              )}
+            </button>
 
-            <div className="divide-y divide-black/8 dark:divide-white/8 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#101010] px-4">
-              {androidRows.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.title}
-                    className="flex items-center justify-between gap-3 py-3.5"
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <Icon className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={1.7} />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-black dark:text-white">
-                          {item.title}
-                        </div>
-                        <div className="text-xs text-black/60 dark:text-white/60">
-                          {item.desc}
-                        </div>
+            {advancedOpen && (
+              <div className="px-4 pb-4 pt-3 border-t border-black/8 dark:border-white/8 space-y-5">
+                {/* Anti-Uninstall Protection */}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs sm:text-sm font-medium text-black dark:text-white">
+                        {t.uninstallTitle}
+                      </div>
+                      <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed">
+                        {t.uninstallDesc}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config.uninstallProtection}
+                      aria-label={t.uninstallTitle}
+                      onClick={handleToggleUninstallProtection}
+                      className="min-h-[44px] min-w-[56px] flex items-center justify-end shrink-0"
+                    >
+                      <span
+                        className={`relative inline-flex h-6 w-12 items-center border transition-colors duration-150 ${
+                          config.uninstallProtection
+                            ? 'bg-black border-black dark:bg-white dark:border-white'
+                            : 'bg-black/[0.06] border-black/20 dark:bg-white/[0.08] dark:border-white/20'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transition-transform duration-150 ${
+                            config.uninstallProtection
+                              ? 'translate-x-[26px] bg-white dark:bg-black'
+                              : 'translate-x-[3px] bg-black/70 dark:bg-white/70'
+                          }`}
+                        />
+                      </span>
+                    </button>
+                  </div>
+
+                  {showPinPrompt && (
+                    <div className="pt-3 border-t border-black/10 dark:border-white/10 space-y-3">
+                      <label className="block space-y-1.5">
+                        <span className="block text-xs font-medium text-black/65 dark:text-white/65">
+                          {t.uninstallPinPrompt}
+                        </span>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          value={pinInput}
+                          onChange={(e) => {
+                            setPinInput(e.target.value);
+                            setPinError(null);
+                          }}
+                          placeholder="PIN"
+                          className="w-full min-h-[44px] border border-black/15 dark:border-white/15 bg-[#FAFAFA] dark:bg-[#0B0B0B] px-3 text-sm font-digital tracking-widest focus:outline-none focus:border-black dark:focus:border-white"
+                        />
+                      </label>
+
+                      {pinError && (
+                        <p className="text-xs font-medium text-black dark:text-white">
+                          {pinError}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPinPrompt(false);
+                            setPinError(null);
+                          }}
+                          className="min-h-[42px] px-3 border border-black/15 dark:border-white/15 text-xs font-medium"
+                        >
+                          {t.uninstallCancel}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleConfirmDisableWithPin}
+                          className="flex-1 min-h-[42px] bg-black text-white dark:bg-white dark:text-black text-xs font-semibold"
+                        >
+                          {t.uninstallConfirm}
+                        </button>
                       </div>
                     </div>
-                    <span className="text-[11px] font-digital text-black/50 dark:text-white/50 whitespace-nowrap shrink-0">
-                      {t.androidBadge}
-                    </span>
+                  )}
+                </div>
+
+                {/* Android Permissions */}
+                <div className="space-y-2.5 pt-3 border-t border-black/8 dark:border-white/8">
+                  <div className="text-xs font-medium text-black/55 dark:text-white/55">
+                    {t.androidLabel}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="border-t border-black/8 dark:border-white/8" />
-
-          {/* Behavioral Health & Future APK Features */}
-          <div className="space-y-3">
-            <div className="text-xs font-medium text-black/55 dark:text-white/55">
-              {t.futureLabel}
-            </div>
-
-            <div className="divide-y divide-black/8 dark:divide-white/8 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#101010] px-4">
-              {futureRows.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.title}
-                    className="flex items-center justify-between gap-3 py-3.5 opacity-60"
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <Icon className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={1.7} />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-black dark:text-white">
-                          {item.title}
-                        </div>
-                        <div className="text-xs text-black/60 dark:text-white/60">
-                          {item.desc}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-digital text-black/50 dark:text-white/50 whitespace-nowrap shrink-0">
-                      {t.comingSoon}
-                    </span>
+                  <div className="divide-y divide-black/8 dark:divide-white/8 border border-black/10 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#0B0B0B] px-3.5">
+                    {androidRows.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            if (
+                              isNativeConnected &&
+                              nativeFocusBridge.requestPermission
+                            ) {
+                              void nativeFocusBridge.requestPermission(item.key);
+                            }
+                          }}
+                          className="w-full text-left flex items-center justify-between gap-3 py-3"
+                        >
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <Icon
+                              className="h-4 w-4 mt-0.5 shrink-0"
+                              strokeWidth={1.7}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-black dark:text-white">
+                                {item.title}
+                              </div>
+                              <div className="text-[11px] text-black/60 dark:text-white/60">
+                                {item.desc}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-digital text-black/50 dark:text-white/50 whitespace-nowrap shrink-0">
+                            {item.granted ? t.androidConnected : t.androidPending}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <p className="text-center text-[11px] text-black/45 dark:text-white/45 pt-1">
-            {t.conceptNote}
+            {t.footerNote}
           </p>
         </div>
       </div>

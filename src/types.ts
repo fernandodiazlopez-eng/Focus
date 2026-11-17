@@ -1,83 +1,67 @@
 export type Language = 'es' | 'en';
 export type ThemeMode = 'dark' | 'light';
-export type ActiveTab = 'plans' | 'stats';
-export type RuleMode = 'daily_limit' | 'always' | 'duration' | 'days';
-export type PlanProtectionMode = 'normal' | 'delay' | 'password';
-export type WeekdayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-export type StatsPeriod = 'today' | '7d' | '30d';
+export type ActiveTab = 'today' | 'stats';
 
-export interface AppCatalogEntry {
-  name: string;
-  androidPackage: string;
-  supportsAntiScroll: boolean;
-}
+export type FocusMode = 'normal' | 'strict';
+export type FocusStatus = 'inactive' | 'active';
+export type AppBlockMethod = 'timer' | 'schedule' | 'password';
+export type AppBlockCategory = 'social' | 'video' | 'games' | 'browsers';
 
-export interface AppElementOption {
-  id: string;
-  labelEs: string;
-  labelEn: string;
-}
-
-export interface AntiScrollAppRule {
-  appName: string;
-  androidPackage?: string;
-  removedElements: string[];
-}
-
-export interface RuleScheduleConfig {
-  mode: RuleMode;
-  dailyLimitMinutes: number;
-  durationPreset: string;
-  selectedDays: WeekdayKey[];
-  timeRange: string;
-}
-
-export interface PlanAntiScrollSection extends RuleScheduleConfig {
-  enabled: boolean;
-  apps: AntiScrollAppRule[];
-}
-
-export interface PlanBlockSection extends RuleScheduleConfig {
-  enabled: boolean;
-  apps: string[];
-}
-
-export interface FocusPlan {
-  id: string;
-  name: string;
-  active: boolean;
-  protection: PlanProtectionMode;
-  password?: string;
-  antiscroll: PlanAntiScrollSection;
-  block: PlanBlockSection;
-  createdAt?: number;
-  updatedAt?: number;
-}
-
-export interface HourlyUsagePoint {
+export interface InstalledAppItem {
+  packageName: string;
   label: string;
-  minutesUsed: number;
+  category?: AppBlockCategory;
 }
 
-export interface AppUsageStat {
-  name: string;
-  androidPackage?: string;
-  minutesUsed: number;
+export interface IndependentAppBlock {
+  enabled: boolean;
+  method: AppBlockMethod;
+  categories: AppBlockCategory[];
+  apps: string[];
+  timerMinutes: number;
+  timerEndsAt: number | null;
+  scheduleDays: string[];
+  scheduleStart: string;
+  scheduleEnd: string;
+  password: string;
 }
 
-export interface StatsDataset {
-  totalMinutesUsed: number;
-  series: HourlyUsagePoint[];
-  apps: AppUsageStat[];
+export interface FocusConfig {
+  status: FocusStatus;
+  mode: FocusMode;
+  strictPin: string;
+  pendingDeactivateAt: number | null;
+  uninstallProtection: boolean;
+  appBlock: IndependentAppBlock;
+}
+
+export interface DailyFocusState {
+  dateKey: string; // Local YYYY-MM-DD
+  usedSecondsToday: number;
+  windowUsedSeconds: number;
+  windowIndex: 1 | 2;
+  pauseEndsAt: number | null;
+  usedSecondsByNetwork: Record<string, number>;
+}
+
+export interface DailyHistoryEntry {
+  dateKey: string;
+  totalScrollSeconds: number;
+  byNetwork: Record<string, number>;
+}
+
+export interface NativePermissionStatus {
+  accessibility: boolean;
+  usageStats: boolean;
+  overlay: boolean;
+  deviceAdmin: boolean;
 }
 
 export interface NativeFocusBridge {
-  syncPlans(plans: FocusPlan[]): Promise<void>;
-  getUsageStats(period: StatsPeriod): Promise<StatsDataset>;
-  getInstalledApps?(): Promise<AppCatalogEntry[]>;
-  checkPermissions?(): Promise<{
-    accessibility: boolean;
-    usageStats: boolean;
-    overlay: boolean;
-  }>;
+  isNativeAvailable(): boolean;
+  syncConfig(config: FocusConfig): Promise<void>;
+  syncDailyState(state: DailyFocusState): Promise<void>;
+  getPermissionsStatus?(): Promise<NativePermissionStatus>;
+  requestPermission?(permission: keyof NativePermissionStatus): Promise<void>;
+  getInstalledApps?(): Promise<InstalledAppItem[]>;
 }
