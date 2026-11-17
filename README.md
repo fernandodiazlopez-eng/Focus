@@ -1,6 +1,12 @@
 # Focus para Android
 
-Focus reduce el scroll infinito en Instagram, TikTok y YouTube. El bloqueo de apps completas se configura aparte, por temporizador, por horario semanal o con contraseña.
+Focus limita el scroll infinito en Instagram, TikTok y YouTube y conserva el acceso a mensajes y búsqueda en las pantallas compatibles. También permite bloquear apps completas por temporizador, por horario semanal o con contraseña.
+
+**Android · Anti-scroll en pruebas · Español e inglés**
+
+[Cómo funciona](#cómo-funciona) · [Compilar la APK](#compilar-la-apk-de-prueba) · [Reportar un fallo](https://github.com/fernandodiazlopez-eng/Focus/issues/new)
+
+**English.** Focus is an Android screen-time tool with automatic feed limits, a no-scroll mode, per-app blocking and on-device usage statistics. Feed detection is experimental and has been tested on a Pixel 8a. Testing on other Android devices is welcome.
 
 ## Cómo funciona
 
