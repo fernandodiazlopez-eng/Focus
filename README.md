@@ -28,3 +28,5 @@ Para probar tu propia compilación en un móvil, puedes usar Android Studio o AD
 ## Colaborar
 
 Las pruebas en otras marcas de Android y versiones de Instagram, TikTok y YouTube son bienvenidas. Si encuentras un fallo, indica el modelo, la versión de Android, la versión de la app afectada y los pasos para reproducirlo.
+<img width="460" height="816" alt="image" src="https://github.com/user-attachments/assets/77388cdd-15fb-4bc9-9081-79e1e2bc2f11" />
+<img width="460" height="813" alt="image" src="https://github.com/user-attachments/assets/41616550-76f4-496a-8ade-bb850007d454" />
