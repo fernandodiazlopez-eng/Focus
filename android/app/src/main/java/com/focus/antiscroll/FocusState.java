@@ -4,7 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 
 final class FocusState {
     private static final long WINDOW = 900_000L;
@@ -53,29 +55,37 @@ final class FocusState {
             (!usesWait || config.optLong("pendingDeactivateAt", Long.MAX_VALUE) > now);
     }
 
-    private static JSONObject day(Context context, long now) {
-        String date = LocalDate.now().toString();
+    private static JSONObject day(Context context, LocalDate date, long now) {
+        String dateKey = date.toString();
         JSONObject stored = parse(prefs(context).getString("day", "{}"));
-        if (!date.equals(stored.optString("dateKey"))) {
+        boolean changed = !dateKey.equals(stored.optString("dateKey"));
+        if (changed) {
             stored = new JSONObject();
-            put(stored, "dateKey", date);
+            put(stored, "dateKey", dateKey);
             put(stored, "windowIndex", 1);
             put(stored, "usedByNetwork", new JSONObject());
         }
         long pause = stored.optLong("pauseEndsAt");
         if (pause > 0 && pause <= now) {
+            changed = true;
+            put(stored, "windowOpenedAt", pause);
             put(stored, "pauseEndsAt", 0);
             put(stored, "windowIndex", 2);
             put(stored, "windowUsed", 0);
         }
+        if (changed) prefs(context).edit().putString("day", stored.toString()).apply();
         return stored;
     }
 
     static synchronized boolean consume(Context context, String network, long duration, long now) {
-        JSONObject stored = day(context, now);
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate date = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+        JSONObject stored = day(context, date, now);
         long used = stored.optLong("windowUsed");
         if (stored.optLong("pauseEndsAt") > now || used >= WINDOW) return true;
-        long charge = Math.min(duration, WINDOW - used);
+        long availableFrom = Math.max(date.atStartOfDay(zone).toInstant().toEpochMilli(),
+            stored.optLong("windowOpenedAt"));
+        long charge = Math.min(Math.min(duration, now - availableFrom), WINDOW - used);
         if (charge <= 0) return false;
 
         put(stored, "windowUsed", used + charge);
@@ -93,7 +103,7 @@ final class FocusState {
         put(entry, "totalScrollSeconds", snapshot.optLong("usedSecondsToday"));
         put(entry, "byNetwork", snapshot.optJSONObject("usedSecondsByNetwork"));
         put(history, entry.optString("dateKey"), entry);
-        String cutoff = LocalDate.now().minusDays(29).toString();
+        String cutoff = date.minusDays(29).toString();
         java.util.Iterator<String> dates = history.keys();
         while (dates.hasNext()) if (dates.next().compareTo(cutoff) < 0) dates.remove();
         prefs(context).edit().putString("day", stored.toString()).putString("history", history.toString()).apply();
@@ -117,7 +127,9 @@ final class FocusState {
 
     static synchronized JSONObject snapshot(Context context) {
         JSONObject result = new JSONObject();
-        put(result, "daily", present(day(context, System.currentTimeMillis())));
+        long now = System.currentTimeMillis();
+        LocalDate date = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate();
+        put(result, "daily", present(day(context, date, now)));
         put(result, "history", parse(prefs(context).getString("history", "{}")));
         return result;
     }
